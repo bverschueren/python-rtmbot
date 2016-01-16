@@ -83,11 +83,24 @@ class Plugin(object):
         self.name = name
         self.jobs = []
         self.module = __import__(name)
+        try:
+            self.module.classname = getattr(self.module, name)
+        except AttributeError:
+            self.module.classname = None
         self.register_jobs()
         self.outputs = []
         if name in config:
             logging.info("config found for: " + name)
-            self.module.config = config[name]
+            if self.module.classname is not None:
+                    self.module.instance = self.module.classname(config[name])
+            else:
+                    self.module.instance = None 
+                    self.module.config = config[name]
+        elif self.module.classname is not None:
+            self.module.instance = self.module.classname()
+        else:
+            self.module.instance = None
+            
         if 'setup' in dir(self.module):
             self.module.setup()
     def register_jobs(self):
@@ -99,13 +112,19 @@ class Plugin(object):
         else:
             self.module.crontable = []
     def do(self, function_name, data):
-        if function_name in dir(self.module):
+        if function_name in dir(self.module) + dir(self.module.instance):
             #this makes the plugin fail with stack trace in debug mode
             if not debug:
-                try:
-                    eval("self.module."+function_name)(data)
-                except:
-                    dbg("problem in module {} {}".format(function_name, data))
+                if self.module.classname is not None and isinstance(self.module.instance, type(self.module.classname())):
+                    try:
+                        eval("self.module.instance."+function_name)(data)
+                    except:
+                        dbg("problem in module {} {}".format(function_name, data))
+                else:
+                    try:
+                        eval("self.module."+function_name)(data)
+                    except:
+                        dbg("problem in module {} {}".format(function_name, data))
             else:
                 eval("self.module."+function_name)(data)
         if "catch_all" in dir(self.module):
